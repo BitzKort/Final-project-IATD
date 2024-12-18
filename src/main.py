@@ -153,6 +153,12 @@ class App(customtkinter.CTk):
         minizinc_code += "\nsolve maximize z;\n\n"
         minizinc_code += 'output [\n'
 
+        for i in range(N):
+            if i < N - 1:
+                minizinc_code += '"{}=", show(x{}), "\\n",\n'.format(listProductosKeys[i], i + 1)
+            else:
+                minizinc_code += '"{}=", show(x{}), "\\n", "Costo=", show(z)\n'.format(listProductosKeys[i], i + 1)
+        minizinc_code += '];\n'
 
         # Mostrar el código en el textbox2
         self.textbox2.configure(state="normal")
