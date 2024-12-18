@@ -31,28 +31,39 @@ class App(customtkinter.CTk):
 
         self.copiarButton = customtkinter.CTkButton(master=self, text="Copiar", command=self.copiar)
         self.copiarButton.grid(row=3, column=1, padx=20, pady=20)
+    
+
 
     def traducirMinizinc(self):
         input_data = self.textbox1.get("0.0", "end-1c").strip().split("\n")
+
+        print(input_data)
         
         # Primero, procesamos los valores de entrada.
-        N = int(input_data[0].strip())  # Número de productos
-        M = int(input_data[1].strip())  # Número de materias primas
+        N = int(input_data[0].strip())  # Número de productos (numero de variables)
+        M = int(input_data[1].strip())  # Número de materias primas (restricciones del problema)
 
         # Listas para almacenar los datos de los productos y materias primas.
-        productos = []
+        productos = {}
+        listProductosKeys = []
         precios = []
         cantidades_materias = []
 
         # Procesar los productos
         for i in range(2, 2 + N):
-            data = input_data[i].strip().split()
-            nombre_producto = data[0]
-            precio_producto = int(data[1])
-            cantidades = list(map(int, data[2:]))
-            productos.append(f'"{nombre_producto}"')  # Producto como string
+            producto = input_data[i].strip().split()
+            nombre_producto = producto[0]
+            precio_producto = int(producto[1])
+            cantidadesProductoPorMateria = list(map(int, producto[2:]))
+            productos[nombre_producto] = f"x{i-1}"  # Producto como string
             precios.append(precio_producto)
-            cantidades_materias.append(cantidades)
+            cantidades_materias.append(cantidadesProductoPorMateria)
+
+        print("datos de productos")
+        print(productos)
+        listProductosKeys = list(productos.keys())
+        print(precios)
+        print(cantidades_materias)
 
         # Listas para almacenar los datos de las materias primas.
         materias = []
@@ -61,43 +72,55 @@ class App(customtkinter.CTk):
 
         # Procesar las materias primas
         for i in range(2 + N, 2 + N + M):
-            data = input_data[i].strip().split()
-            nombre_materia = data[0]
-            costo_materia = int(data[1])
-            disponibilidad_materia = int(data[2])
+            materiaPrima = input_data[i].strip().split()
+            nombre_materia = materiaPrima[0]
+            costo_materia = int(materiaPrima[1])
+            disponibilidad_materia = int(materiaPrima[2])
             materias.append(f'"{nombre_materia}"')  # Materia prima como string
             costos.append(costo_materia)
             disponibilidades.append(disponibilidad_materia)
 
         # Procesar las demandas mínimas y máximas
-        demandas_minimas = [0] * N
-        demandas_maximas = [100000] * N  # Valor alto como "infinito" para máximas
+        listaDemandas = [] # Valor alto como "infinito" para máximas
 
-        for i in range(2 + N + M, len(input_data)):
-            data = input_data[i].strip().split()
-            producto = data[0]
-            tipo_demanda = data[1]
-            valor_demanda = int(data[2])
+        iter = 2 + N + M #nos aseguramos de estar en la primer linea de las restricciones de demandas
+        while True:
 
-            # Encontrar el índice del producto
-            index_producto = productos.index(f'"{producto}"')
-            if tipo_demanda == "minimo":
-                demandas_minimas[index_producto] = valor_demanda
-            elif tipo_demanda == "maximo":
-                demandas_maximas[index_producto] = valor_demanda
+            try:
+                
+                demandas = input_data[iter].strip().split()
+                print(demandas)
+                demandaNombreProducto = demandas[0]
+                tipo_demanda = demandas[1]
+                valor_demanda = int(demandas[2])
+                
+                if tipo_demanda == "minimo":
+                    listaDemandas.append([productos[demandaNombreProducto], ">=", valor_demanda])
+                elif tipo_demanda == "maximo":
+                    listaDemandas.append([productos[demandaNombreProducto], "<=", valor_demanda])
+
+                iter +=1
+            
+            except Exception:
+                
+                print("no hay mas lineas por traducir")
+                break
+        print("liesta de cosas")
+        print(listaDemandas)
 
         # Generar código MiniZinc en el formato solicitado
         minizinc_code = ""
 
+        #Primero se generan las variables
         for i in range(N):
-            minizinc_code += f"var int: x{i+1}; %{productos[i]}\n"
+            minizinc_code += f"var int: x{i+1}; %{listProductosKeys[i]}\n"
         
         minizinc_code += "\n"
 
         # Definición de la variable z para los costos
         minizinc_code += "var int: z;\n\n"
 
-        # Restricción de costos
+        # Restricción de costos (funcion objetivo)
         minizinc_code += "constraint z = "
         for i in range(N):
             minizinc_code += f"{precios[i]} * x{i+1} + " if i < N - 1 else f"{precios[i]} * x{i+1};  %Costo a minimizar\n"
@@ -114,15 +137,22 @@ class App(customtkinter.CTk):
             minizinc_code += f"<= {disponibilidades[j]};  % Materia prima {materias[j]}\n"
         
         # Restricciones de demanda
-        for i in range(N):
-            minizinc_code += f"constraint x{i+1} >= {demandas_minimas[i]} /\ x{i+1} <= {demandas_maximas[i]};  % Demanda de {productos[i]}\n"
+
+        if len(listaDemandas) != 0: #Es decir, si existe al menos una demanda en alguno de los dos
+
+
+            for demanda in listaDemandas:
+
+                minizinc_code += f"constraint {demanda[0]} {demanda[1]} {demanda[2]}; \n"
+        
+        else:
+            print("no hay demandas")
+            
 
         # Solución
         minizinc_code += "\nsolve maximize z;\n\n"
         minizinc_code += 'output [\n'
-        for i in range(N):
-            minizinc_code += f'"{productos[i]}=" , show(x{i+1}), "\\n"\n' if i < N - 1 else f'"{productos[i]}=" , show(x{i+1}), "\\n", "Costo=", show(z) \n'
-        minizinc_code += '];\n'
+
 
         # Mostrar el código en el textbox2
         self.textbox2.configure(state="normal")
@@ -137,3 +167,4 @@ class App(customtkinter.CTk):
 
 app = App()
 app.mainloop()
+
